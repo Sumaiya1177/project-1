@@ -100,6 +100,7 @@ class _SignupPageState extends State<SignupPage> {
     final value = (v ?? "").trim();
     if (value.isEmpty) return "Email required";
     if (!value.contains("@")) return "Enter valid email";
+
     return null;
   }
 
@@ -107,6 +108,9 @@ class _SignupPageState extends State<SignupPage> {
     final value = (v ?? "").trim();
     if (value.isEmpty) return "Password required";
     if (value.length < 6) return "Min 6 characters";
+    if (!RegExp(r'[A-Z]').hasMatch(value)) return "Password must contain 1 capital letter";
+    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) return "Password must contain 1 special character";
+
     return null;
   }
 

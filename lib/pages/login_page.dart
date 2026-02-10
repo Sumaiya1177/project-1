@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_project1/auth/auth_service.dart';
-import 'package:flutter_project1/pages/explore_page.dart';
+import 'package:flutter_project1/Database/explore_page.dart';
 import 'package:flutter_project1/pages/signup_page.dart';
 
 class LoginPage extends StatefulWidget {

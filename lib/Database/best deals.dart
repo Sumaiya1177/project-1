@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class BestDealsPage extends StatelessWidget {
   final VoidCallback onBackToExplore;
 
-  const BestDealsPage({super.key, required this.onBackToExplore});
+  const BestDealsPage({super.key, required this.onBackToExplore, required void Function() onBack});
 
   // 🌊 theme
   static const bgAqua = Color(0xFFE8F8F7);

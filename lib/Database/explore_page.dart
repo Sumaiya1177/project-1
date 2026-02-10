@@ -1,11 +1,14 @@
+// explore_page.dart
 import 'package:flutter/material.dart';
 
+// Import all pages
 import 'family.dart';
 import 'office.dart';
 import 'bachelor.dart';
 import 'hostel.dart';
 import 'wishlist.dart';
 import 'best deals.dart';
+import 'profile.dart';
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
@@ -17,7 +20,7 @@ class ExplorePage extends StatefulWidget {
 class _ExplorePageState extends State<ExplorePage> {
   int bottomIndex = 0;
 
-  // 🌊 Theme colors
+  // 🌊 Theme Colors
   static const bgAqua = Color(0xFFE8F8F7);
   static const teal = Color(0xFF2FB9B3);
   static const tealDark = Color(0xFF2E6F6B);
@@ -26,6 +29,7 @@ class _ExplorePageState extends State<ExplorePage> {
   static const verdeBorder = Color(0xFF9FE7D3);
   static const innerBg = Color(0xFFF3FAFF);
 
+  // Features List
   final features = const [
     {"label": "Family", "image": "image/family_icon.jpg"},
     {"label": "Office", "image": "image/office_icon.jpg"},
@@ -35,7 +39,7 @@ class _ExplorePageState extends State<ExplorePage> {
     {"label": "Best Deals", "image": "image/best deals.jpg"},
   ];
 
-  // 🔁 common navigator
+  /// Navigate to page
   void _openPage(Widget page) {
     Navigator.push(
       context,
@@ -43,66 +47,60 @@ class _ExplorePageState extends State<ExplorePage> {
     );
   }
 
-  // 🎯 feature routing
+  /// Feature tap routing
   void _onFeatureTap(String label) {
     switch (label) {
       case "Family":
-        _openPage(FamilyPage(onBackToExplore: () => Navigator.pop(context)));
+        _openPage(FamilyPage(onBack: () => Navigator.pop(context)));
         break;
-
       case "Office":
-        _openPage(OfficePage(onBackToExplore: () => Navigator.pop(context)));
+        _openPage(OfficePage(onBack: () {}, onBackToExplore: () {}));
         break;
-
       case "Bachelor":
-        _openPage(BachelorPage(onBackToExplore: () => Navigator.pop(context)));
+        _openPage(BachelorPage(onBack: () {}, onBackToExplore: () {}));
         break;
-
       case "Hostel":
-        _openPage(HostelPage(onBackToExplore: () => Navigator.pop(context)));
+        _openPage(HostelPage(onBack: () {}, onBackToExplore: () {}));
         break;
-
       case "Wishlist":
-        _openPage(WishlistPage(onBackToExplore: () => Navigator.pop(context)));
+        _openPage(WishlistPage());
         break;
-
       case "Best Deals":
-        _openPage(BestDealsPage(onBackToExplore: () => Navigator.pop(context)));
+        _openPage(BestDealsPage(onBackToExplore: () {}, onBack: () {}));
         break;
     }
   }
 
-  // 🔻 bottom navigation
+  /// Bottom navigation tap
   void _onBottomTap(int index) {
     setState(() => bottomIndex = index);
 
-    if (index == 0) return; // already Explore
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          index == 1
-              ? "Home clicked"
-              : index == 2
-              ? "Message clicked"
-              : "Profile clicked",
-        ),
-      ),
-    );
+    if (index == 0) {
+      // Home -> ExplorePage (replace so no duplicate)
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const ExplorePage()),
+      );
+    } else if (index == 1) {
+      // Profile -> ProfilePage
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) =>  ProfilePage()),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: bgAqua,
-
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 🏷 App title
+              // App title
               SizedBox(
                 height: 52,
                 child: Center(
@@ -118,9 +116,7 @@ class _ExplorePageState extends State<ExplorePage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 6),
-
               const Text(
                 "Features",
                 style: TextStyle(
@@ -129,10 +125,9 @@ class _ExplorePageState extends State<ExplorePage> {
                   color: tealDark,
                 ),
               ),
-
               const SizedBox(height: 14),
 
-              // 🧩 Feature Grid
+              // Feature Grid
               Expanded(
                 child: GridView.builder(
                   itemCount: features.length,
@@ -193,9 +188,7 @@ class _ExplorePageState extends State<ExplorePage> {
                                 ),
                               ),
                             ),
-
                             const SizedBox(height: 12),
-
                             Text(
                               label,
                               style: const TextStyle(
@@ -204,9 +197,7 @@ class _ExplorePageState extends State<ExplorePage> {
                                 color: tealDark,
                               ),
                             ),
-
                             const SizedBox(height: 6),
-
                             Container(
                               height: 3,
                               width: 34,
@@ -227,7 +218,7 @@ class _ExplorePageState extends State<ExplorePage> {
         ),
       ),
 
-      // 🔻 Bottom Navigation
+      // Bottom Navigation (Home & Profile only)
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: bottomIndex,
         onTap: _onBottomTap,
@@ -235,9 +226,7 @@ class _ExplorePageState extends State<ExplorePage> {
         unselectedItemColor: tealMuted.withOpacity(0.75),
         type: BottomNavigationBarType.fixed,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: "Explore"),
-          BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: "Home"),
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: "Message"),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
           BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: "Profile"),
         ],
       ),

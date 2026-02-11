@@ -6,7 +6,7 @@ import 'profile.dart';
 import 'explore_page.dart';
 
 class BachelorPage extends StatefulWidget {
-  const BachelorPage({super.key, required Null Function() onBack, required Null Function() onBackToExplore});
+  const BachelorPage({super.key, required void Function() onBack, required Null Function() onBackToExplore});
 
   @override
   State<BachelorPage> createState() => _BachelorPageState();
@@ -14,9 +14,12 @@ class BachelorPage extends StatefulWidget {
 
 class _BachelorPageState extends State<BachelorPage> {
   final supabase = Supabase.instance.client;
+
   List<Map<String, dynamic>> posts = [];
+  String userRole = "user";
   int bottomIndex = 0;
 
+  // 🎨 Theme Colors (same as FamilyPage)
   static const bgAqua = Color(0xFFE8F8F7);
   static const teal = Color(0xFF2FB9B3);
   static const tealDark = Color(0xFF2E6F6B);
@@ -28,19 +31,38 @@ class _BachelorPageState extends State<BachelorPage> {
   @override
   void initState() {
     super.initState();
+    loadUserRole();
     loadPosts();
   }
 
+  // ================= USER ROLE =================
+  Future<void> loadUserRole() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final data = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+
+    userRole = data['role'] ?? "user";
+    setState(() {});
+  }
+
+  // ================= LOAD POSTS =================
   Future<void> loadPosts() async {
     final data = await supabase
         .from('rent_posts')
         .select()
         .eq('category', 'bachelor')
         .order('created_at', ascending: false);
+
     posts = List<Map<String, dynamic>>.from(data);
     setState(() {});
   }
 
+  // ================= IMAGE UPLOAD =================
   Future<String?> uploadImage() async {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery);
@@ -49,17 +71,26 @@ class _BachelorPageState extends State<BachelorPage> {
     final file = File(image.path);
     final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-    await supabase.storage.from('rent_images').upload('bachelor/$fileName', file);
+    await supabase.storage
+        .from('rent_images')
+        .upload('bachelor/$fileName', file);
 
-    return supabase.storage.from('rent_images').getPublicUrl('bachelor/$fileName');
+    return supabase.storage
+        .from('rent_images')
+        .getPublicUrl('bachelor/$fileName');
   }
 
+  // ================= ADD POST =================
   Future<void> addPostDialog() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
     final title = TextEditingController();
     final location = TextEditingController();
     final area = TextEditingController();
     final price = TextEditingController();
     final phone = TextEditingController();
+
     DateTime? availableFrom;
     String? imageUrl;
 
@@ -67,7 +98,8 @@ class _BachelorPageState extends State<BachelorPage> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: featureCard,
-        title: const Text("Add Bachelor Rent", style: TextStyle(color: tealDark)),
+        title: const Text("Add Bachelor Rent",
+            style: TextStyle(color: tealDark)),
         content: SingleChildScrollView(
           child: Column(
             children: [
@@ -76,10 +108,10 @@ class _BachelorPageState extends State<BachelorPage> {
               _inputField(area, "Area"),
               _inputField(price, "Price"),
               _inputField(phone, "Phone"),
-              const SizedBox(height: 8),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: teal),
-                onPressed: () async => imageUrl = await uploadImage(),
+                onPressed: () async =>
+                imageUrl = await uploadImage(),
                 child: const Text("Pick Image"),
               ),
               ElevatedButton(
@@ -99,18 +131,20 @@ class _BachelorPageState extends State<BachelorPage> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel")),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: teal),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Save"),
-          ),
+              style: ElevatedButton.styleFrom(backgroundColor: teal),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Save")),
         ],
       ),
     );
 
     if (ok == true) {
       await supabase.from('rent_posts').insert({
+        'user_id': user.id,
         'title': title.text,
         'location': location.text,
         'area': area.text,
@@ -120,33 +154,79 @@ class _BachelorPageState extends State<BachelorPage> {
         'image_url': imageUrl,
         'category': 'bachelor',
       });
+
       loadPosts();
     }
   }
 
-  Future<void> addToWishlist(Map post) async {
+  // ================= DELETE POST =================
+  Future<void> confirmDelete(int postId) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: featureCard,
+        title: const Text("Delete Post",
+            style: TextStyle(color: tealDark)),
+        content:
+        const Text("Are you sure you want to delete this post?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel")),
+          ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: teal),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Delete")),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      await supabase.from('rent_posts').delete().eq('id', postId);
+      loadPosts();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Post deleted")),
+      );
+    }
+  }
+
+  // ================= WISHLIST TOGGLE =================
+  Future<void> toggleWishlist(int postId) async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
-    await supabase.from('wishlist').insert({
-      'user_id': user.id,
-      'post_id': post['id'],
-      'title': post['title'],
-      'price': post['price'],
-      'area': post['area'],
-      'location': post['location'],
-      'phone': post['phone'],
-      'available_from': post['available_from'],
-      'image_url': post['image_url'],
-      'category': post['category'],
-    });
+
+    final existing = await supabase
+        .from('wishlist')
+        .select()
+        .eq('user_id', user.id)
+        .eq('post_id', postId);
+
+    if (existing.isNotEmpty) {
+      await supabase
+          .from('wishlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('post_id', postId);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Removed from wishlist")),
+      );
+    } else {
+      await supabase.from('wishlist').insert({
+        'user_id': user.id,
+        'post_id': postId,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Added to wishlist")),
+      );
+    }
+
+    setState(() {});
   }
 
-  void _onBottomTap(int index) {
-    setState(() => bottomIndex = index);
-    if (index == 0) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const ExplorePage()));
-    else if (index == 1) Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
-  }
-
+  // ================= UI HELPER =================
   Widget _inputField(TextEditingController controller, String label) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -159,15 +239,31 @@ class _BachelorPageState extends State<BachelorPage> {
           fillColor: innerBg,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: verdeBorder),
+            borderSide: const BorderSide(color: verdeBorder),
           ),
         ),
       ),
     );
   }
 
+  void _onBottomTap(int index) {
+    setState(() => bottomIndex = index);
+
+    if (index == 0) {
+      Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ExplorePage()));
+    } else if (index == 1) {
+      Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ProfilePage()));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUser = supabase.auth.currentUser;
+
     return Scaffold(
       backgroundColor: bgAqua,
       appBar: AppBar(
@@ -176,7 +272,11 @@ class _BachelorPageState extends State<BachelorPage> {
         centerTitle: true,
         title: const Text(
           "Bachelor Rentals",
-          style: TextStyle(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic, color: tealDark, fontSize: 22),
+          style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontStyle: FontStyle.italic,
+              fontSize: 22,
+              color: tealDark),
         ),
       ),
       floatingActionButton: FloatingActionButton(
@@ -189,51 +289,100 @@ class _BachelorPageState extends State<BachelorPage> {
           : GridView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: posts.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate:
+        const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 1,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
         itemBuilder: (_, i) {
           final p = posts[i];
+          final isOwner =
+              currentUser?.id == p['user_id'];
+          final isAdmin = userRole == "admin";
+
           return Card(
             color: featureCard,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+                borderRadius:
+                BorderRadius.circular(12)),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: p['image_url'] != null
                       ? ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                    child: Image.network(p['image_url'], fit: BoxFit.cover, width: double.infinity),
+                    borderRadius:
+                    const BorderRadius.vertical(
+                        top:
+                        Radius.circular(12)),
+                    child: Image.network(
+                      p['image_url'],
+                      fit: BoxFit.cover,
+                      width:
+                      double.infinity,
+                    ),
                   )
-                      : const Icon(Icons.image, size: 80, color: tealMuted),
+                      : const Icon(Icons.image,
+                      size: 80,
+                      color: tealMuted),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(6),
+                  padding:
+                  const EdgeInsets.all(6),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment:
+                    CrossAxisAlignment
+                        .start,
                     children: [
-                      Text(p['title'], style: const TextStyle(fontWeight: FontWeight.bold, color: tealDark)),
-                      Text("৳ ${p['price']}", style: const TextStyle(color: tealDark)),
-                      Text("📞 ${p['phone']}", style: const TextStyle(color: tealDark)),
-                      Text("📅 ${p['available_from'] ?? ''}", style: const TextStyle(color: tealDark)),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: IconButton(
-                          icon: const Icon(Icons.favorite_border, color: Colors.pink),
-                          onPressed: () async {
-                            await addToWishlist(p);
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(const SnackBar(content: Text("Added to Wishlist")));
-                          },
-                        ),
-                      ),
+                      Text(p['title'],
+                          style:
+                          const TextStyle(
+                              fontWeight:
+                              FontWeight
+                                  .bold,
+                              color:
+                              tealDark)),
+                      Text("৳ ${p['price']}",
+                          style:
+                          const TextStyle(
+                              color:
+                              tealDark)),
+                      Text("📞 ${p['phone']}",
+                          style:
+                          const TextStyle(
+                              color:
+                              tealDark)),
+                      Row(
+                        mainAxisAlignment:
+                        MainAxisAlignment
+                            .spaceBetween,
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                                Icons
+                                    .favorite_border,
+                                color:
+                                Colors.pink),
+                            onPressed: () =>
+                                toggleWishlist(
+                                    p['id']),
+                          ),
+                          if (isOwner ||
+                              isAdmin)
+                            IconButton(
+                              icon: const Icon(
+                                  Icons.delete,
+                                  color:
+                                  Colors.red),
+                              onPressed: () =>
+                                  confirmDelete(
+                                      p['id']),
+                            ),
+                        ],
+                      )
                     ],
                   ),
-                ),
+                )
               ],
             ),
           );
@@ -243,10 +392,14 @@ class _BachelorPageState extends State<BachelorPage> {
         currentIndex: bottomIndex,
         onTap: _onBottomTap,
         selectedItemColor: teal,
-        unselectedItemColor: tealMuted.withOpacity(0.75),
+        unselectedItemColor: tealMuted,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: "Profile"),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.home),
+              label: "Home"),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.person),
+              label: "Profile"),
         ],
       ),
     );

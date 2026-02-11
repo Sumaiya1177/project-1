@@ -1,42 +1,5 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:image_picker/image_picker.dart';
-
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  await Supabase.initialize(
-    url: 'YOUR_SUPABASE_URL',
-    anonKey: 'YOUR_SUPABASE_ANON_KEY',
-  );
-
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Profile',
-      theme: ThemeData(
-        primaryColor: const Color(0xFF2FB9B3),
-        scaffoldBackgroundColor: Colors.transparent,
-      ),
-      initialRoute: '/profile',
-      routes: {
-        '/profile': (_) => const ProfilePage(),
-        '/help': (_) => const HelpPage(),
-        '/welcome': (_) => const WelcomePage(),
-      },
-    );
-  }
-}
-
-/* ================= PROFILE PAGE ================= */
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -47,229 +10,144 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final supabase = Supabase.instance.client;
-  Map<String, dynamic>? profileData;
-  bool isLoading = true;
-  File? _imageFile;
+
+  // 🎨 App Theme Colors (same as Family Page)
+  static const bgAqua = Color(0xFFE8F8F7);
+  static const teal = Color(0xFF2FB9B3);
+  static const tealDark = Color(0xFF2E6F6B);
+  static const tealMuted = Color(0xFF4F6F6C);
+  static const featureCard = Color(0xFFDFECFF);
+  static const verdeBorder = Color(0xFF9FE7D3);
+  static const innerBg = Color(0xFFF3FAFF);
+
+  String userName = "Loading...";
 
   @override
   void initState() {
     super.initState();
-    _fetchProfile();
+    loadProfile();
   }
 
-  Future<void> _fetchProfile() async {
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
-
-      final data = await supabase
-          .from('profiles')
-          .select()
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      setState(() {
-        profileData = data;
-        isLoading = false;
-      });
-    } catch (_) {
-      setState(() => isLoading = false);
-    }
-  }
-
-  Future<void> _updateProfile(Map<String, dynamic> values) async {
+  Future<void> loadProfile() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    await supabase
+    final data = await supabase
         .from('profiles')
-        .update(values)
-        .eq('user_id', user.id);
+        .select('name')
+        .eq('user_id', user.id)
+        .single();
 
-    _fetchProfile();
+    setState(() {
+      userName = data['name'] ?? 'User';
+    });
   }
 
-  Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      setState(() => _imageFile = File(picked.path));
-    }
-  }
-
-  void _logout() async {
-    await supabase.auth.signOut();
-    if (!mounted) return;
-    Navigator.pushNamedAndRemoveUntil(context, '/welcome', (_) => false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _infoTile(IconData icon, String text) {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF2FB9B3), Color(0xFFE8F8F7)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: innerBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: verdeBorder),
       ),
-      child: Scaffold(
+      child: Row(
+        children: [
+          Icon(icon, color: teal),
+          const SizedBox(width: 12),
+          Text(
+            text,
+            style: const TextStyle(
+              fontSize: 15,
+              color: tealDark,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: bgAqua,
+      appBar: AppBar(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: const Text("My Profile"),
-          centerTitle: true,
-          backgroundColor: Colors.transparent,
-          elevation: 0,
+        elevation: 0,
+        centerTitle: true,
+        title: const Text(
+          "My Profile",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontStyle: FontStyle.italic,
+            fontSize: 22,
+            color: tealDark,
+          ),
         ),
-        body: isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              GestureDetector(
-                onTap: _pickImage,
-                child: CircleAvatar(
-                  radius: 55,
-                  backgroundColor: Colors.white,
-                  backgroundImage: _imageFile != null
-                      ? FileImage(_imageFile!)
-                      : (profileData?['profile_url'] != null
-                      ? NetworkImage(profileData!['profile_url'])
-                      : null) as ImageProvider?,
-                  child: _imageFile == null &&
-                      profileData?['profile_url'] == null
-                      ? Text(
-                    profileData?['name']?[0] ?? "U",
-                    style: const TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2FB9B3),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // 👤 Profile Header
+            Card(
+              color: featureCard,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Column(
+                  children: [
+                    const CircleAvatar(
+                      radius: 45,
+                      backgroundColor: teal,
+                      child: Icon(Icons.person, size: 50, color: Colors.white),
                     ),
-                  )
-                      : null,
+                    const SizedBox(height: 12),
+                    Text(
+                      userName,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        fontStyle: FontStyle.italic,
+                        color: tealDark,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                profileData?['name'] ?? "User",
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+            ),
+
+            const SizedBox(height: 24),
+
+            // ℹ️ Profile Info
+            _infoTile(Icons.phone, "Phone number"),
+            _infoTile(Icons.location_on, "Your location"),
+            _infoTile(Icons.email, "Email address"),
+
+            const Spacer(),
+
+            // 🚪 Logout Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: teal,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
+                onPressed: () async {
+                  await supabase.auth.signOut();
+                },
+                icon: const Icon(Icons.logout),
+                label: const Text("Logout"),
               ),
-              const SizedBox(height: 30),
-
-              _editableCard(
-                "Name",
-                profileData?['name'],
-                    (v) => _updateProfile({'name': v}),
-              ),
-              _infoCard("Email", profileData?['email']),
-              _editableCard(
-                "Phone",
-                profileData?['phone'],
-                    (v) => _updateProfile({'phone': v}),
-              ),
-              _editableCard(
-                "Address",
-                profileData?['address'],
-                    (v) => _updateProfile({'address': v}),
-              ),
-
-              const SizedBox(height: 20),
-
-              ListTile(
-                leading: const Icon(Icons.help, color: Color(0xFF2FB9B3)),
-                title: const Text("Help"),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: () => Navigator.pushNamed(context, '/help'),
-              ),
-
-              ListTile(
-                leading:
-                const Icon(Icons.logout, color: Colors.redAccent),
-                title: const Text(
-                  "Logout",
-                  style: TextStyle(color: Colors.redAccent),
-                ),
-                onTap: _logout,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _editableCard(
-      String label, String? value, Function(String) onSave) {
-    final controller = TextEditingController(text: value);
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ListTile(
-        title: Text(label,
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            hintText: "Enter $label",
-            border: InputBorder.none,
-          ),
-          onSubmitted: onSave,
-        ),
-      ),
-    );
-  }
-
-  Widget _infoCard(String label, String? value) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: ListTile(
-        title: Text(label,
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(value ?? ""),
-      ),
-    );
-  }
-}
-
-/* ================= WELCOME PAGE ================= */
-
-class WelcomePage extends StatelessWidget {
-  const WelcomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Welcome")),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () => Navigator.pushNamed(context, '/profile'),
-          child: const Text("Go to Profile"),
-        ),
-      ),
-    );
-  }
-}
-
-/* ================= HELP PAGE ================= */
-
-class HelpPage extends StatelessWidget {
-  const HelpPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Help")),
-      body: const Center(
-        child: Text(
-          "Need help?\nContact support or check FAQ.",
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18),
+            ),
+          ],
         ),
       ),
     );

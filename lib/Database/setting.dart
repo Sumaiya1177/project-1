@@ -14,6 +14,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final SupabaseClient supabase = Supabase.instance.client;
 
+  // Controllers for form fields
   final nameController = TextEditingController();
   final genderController = TextEditingController();
   final ageController = TextEditingController();
@@ -21,17 +22,18 @@ class _SettingsPageState extends State<SettingsPage> {
   final addressController = TextEditingController();
   final phoneController = TextEditingController();
 
-  File? _image; // Profile picture
+  File? _image; // local picked image
   String email = "";
+  String? avatarUrl; // Supabase storage image URL
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    loadProfile();
+    loadProfile(); // Load user data from Supabase
   }
 
-  /// Load profile data
+  /// Load Profile Data from Supabase Table
   Future<void> loadProfile() async {
     setState(() => isLoading = true);
 
@@ -54,6 +56,7 @@ class _SettingsPageState extends State<SettingsPage> {
         nidController.text = data['nid_number'] ?? "";
         addressController.text = data['address'] ?? "";
         phoneController.text = data['phone'] ?? "";
+        avatarUrl = data['image_url'];
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -64,19 +67,53 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// Pick image from gallery only
+  /// Pick Image from Gallery
   Future<void> pickImage() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final pickedFile =
+    await picker.pickImage(source: ImageSource.gallery);
 
     if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
-      });
+      _image = File(pickedFile.path);
+      await uploadImage();
     }
   }
 
-  /// Save profile
+  /// Upload Image to Supabase Storage Bucket 'profile'
+  Future<void> uploadImage() async {
+    final user = supabase.auth.currentUser;
+    if (user == null || _image == null) return;
+
+    try {
+      final fileName = "${user.id}.jpg";
+      final bytes = await _image!.readAsBytes();
+
+      await supabase.storage
+          .from('profile') // bucket name
+          .uploadBinary(
+        fileName,
+        bytes,
+        fileOptions: const FileOptions(upsert: true),
+      );
+
+      final imageUrl =
+      supabase.storage.from('profile').getPublicUrl(fileName);
+
+      setState(() {
+        avatarUrl = imageUrl;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Image Uploaded Successfully")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Image upload failed: $e")),
+      );
+    }
+  }
+
+  /// Save Profile Data to Supabase Table 'profiles'
   Future<void> saveProfile() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
@@ -89,13 +126,19 @@ class _SettingsPageState extends State<SettingsPage> {
       'nid_number': nidController.text.trim(),
       'address': addressController.text.trim(),
       'phone': phoneController.text.trim(),
-      // store profile picture path if needed
+      'image_url': avatarUrl,
     };
 
     try {
       await supabase.from('profiles').upsert(upsertData);
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Profile Updated Successfully")),
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const ProfilePage()),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,6 +147,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  /// ===============================
+  /// UI Build
+  /// ===============================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -130,110 +176,112 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         centerTitle: true,
       ),
-      body: SafeArea(
-        child: isLoading
-            ? const Center(
-          child: CircularProgressIndicator(color: Color(0xFF6FD6CF)),
-        )
-            : ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          children: [
-            /// Profile picture
-            Center(
-              child: GestureDetector(
-                onTap: pickImage,
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundColor: const Color(0xFFBFEFED),
-                  backgroundImage: _image != null ? FileImage(_image!) : null,
-                  child: _image == null
-                      ? const Icon(Icons.person, size: 50, color: Colors.white)
-                      : null,
+      body: isLoading
+          ? const Center(
+        child: CircularProgressIndicator(color: Color(0xFF6FD6CF)),
+      )
+          : ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildField("Full Name", nameController),
+          const SizedBox(height: 16),
+          _buildField("Gender", genderController),
+          const SizedBox(height: 16),
+          _buildField("Age", ageController, isNumber: true),
+          const SizedBox(height: 16),
+          _buildField("NID Number", nidController),
+          const SizedBox(height: 16),
+          _buildField("Address", addressController),
+          const SizedBox(height: 16),
+          _buildField("Phone Number", phoneController),
+          const SizedBox(height: 16),
+          _buildEmailField(),
+          const SizedBox(height: 16),
+
+          /// Image Upload Section
+          GestureDetector(
+            onTap: pickImage,
+            child: Container(
+              height: 140,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFBFEFED)),
+              ),
+              child: avatarUrl != null
+                  ? ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.network(
+                  avatarUrl!,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                ),
+              )
+                  : const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.image,
+                        size: 40, color: Color(0xFF6FD6CF)),
+                    SizedBox(height: 8),
+                    Text("Upload Profile Picture"),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-
-            _buildField("Full Name", nameController),
-            const SizedBox(height: 16),
-            _buildField("Gender", genderController),
-            const SizedBox(height: 16),
-            _buildField("Age", ageController, isNumber: true),
-            const SizedBox(height: 16),
-            _buildField("NID Number", nidController),
-            const SizedBox(height: 16),
-            _buildField("Address", addressController),
-            const SizedBox(height: 16),
-            _buildField("Phone Number", phoneController),
-            const SizedBox(height: 16),
-            _buildEmailField(),
-            const SizedBox(height: 24),
-
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6FD6CF),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: saveProfile,
-                child: const Text(
-                  "Save Changes",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF2E6F6B),
-                  ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 50,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6FD6CF),
+              ),
+              onPressed: saveProfile,
+              child: const Text(
+                "Save Changes",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2E6F6B),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  /// Text field widget
+  /// ===============================
+  /// Text Field Widget
+  /// ===============================
   Widget _buildField(String label, TextEditingController controller,
       {bool isNumber = false}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFBFEFED)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      child: TextField(
-        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-        controller: controller,
-        style: const TextStyle(color: Color(0xFF163B38)),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: Color(0xFF4F6F6C)),
-          border: InputBorder.none,
+    return TextField(
+      controller: controller,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      decoration: InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
     );
   }
 
-  /// Email field (read-only)
   Widget _buildEmailField() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFBFEFED)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("Email", style: TextStyle(color: Color(0xFF4F6F6C))),
-          const SizedBox(height: 6),
-          Text(email, style: const TextStyle(color: Color(0xFF163B38))),
-        ],
+    return TextField(
+      readOnly: true,
+      controller: TextEditingController(text: email),
+      decoration: InputDecoration(
+        labelText: "Email",
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
     );
   }

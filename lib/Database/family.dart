@@ -2,8 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'profile.dart';
-import 'explore_page.dart';
+import 'wishlist.dart';
 
 class FamilyPage extends StatefulWidget {
   const FamilyPage({super.key, required void Function() onBack});
@@ -16,14 +15,12 @@ class _FamilyPageState extends State<FamilyPage> {
   final supabase = Supabase.instance.client;
 
   List<Map<String, dynamic>> posts = [];
-  String userRole = "user";
-  int bottomIndex = 0;
+  List<int> wishlistIds = [];
 
   // 🎨 Theme Colors
   static const bgAqua = Color(0xFFE8F8F7);
   static const teal = Color(0xFF2FB9B3);
   static const tealDark = Color(0xFF2E6F6B);
-  static const tealMuted = Color(0xFF4F6F6C);
   static const featureCard = Color(0xFFDFECFF);
   static const verdeBorder = Color(0xFF9FE7D3);
   static const innerBg = Color(0xFFF3FAFF);
@@ -31,26 +28,10 @@ class _FamilyPageState extends State<FamilyPage> {
   @override
   void initState() {
     super.initState();
-    loadUserRole();
     loadPosts();
+    loadWishlist();
   }
 
-  // ================= USER ROLE =================
-  Future<void> loadUserRole() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    final data = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('user_id', user.id)
-        .single();
-
-    userRole = data['role'] ?? "user";
-    setState(() {});
-  }
-
-  // ================= LOAD POSTS =================
   Future<void> loadPosts() async {
     final data = await supabase
         .from('rent_posts')
@@ -62,14 +43,75 @@ class _FamilyPageState extends State<FamilyPage> {
     setState(() {});
   }
 
-  // ================= IMAGE UPLOAD =================
+  Future<void> loadWishlist() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final data = await supabase
+        .from('wishlist')
+        .select('post_id')
+        .eq('user_id', user.id);
+
+    wishlistIds =
+    List<int>.from(data.map((e) => e['post_id'] as int));
+
+    setState(() {});
+  }
+
+  Future<void> deletePost(Map<String, dynamic> post) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    if (post['user_id'] != user.id) return;
+
+    await supabase
+        .from('rent_posts')
+        .delete()
+        .eq('id', post['id']);
+
+    if (post['image_url'] != null) {
+      final path = post['image_url']
+          .toString()
+          .split('/rent_images/')[1];
+      await supabase.storage
+          .from('rent_images')
+          .remove([path]);
+    }
+
+    await loadPosts();
+  }
+
+  Future<void> toggleWishlist(int postId) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    if (wishlistIds.contains(postId)) {
+      await supabase
+          .from('wishlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('post_id', postId);
+      wishlistIds.remove(postId);
+    } else {
+      await supabase.from('wishlist').insert({
+        'user_id': user.id,
+        'post_id': postId,
+      });
+      wishlistIds.add(postId);
+    }
+
+    setState(() {});
+  }
+
   Future<String?> uploadImage() async {
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
+    final image =
+    await picker.pickImage(source: ImageSource.gallery);
     if (image == null) return null;
 
     final file = File(image.path);
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final fileName =
+        '${DateTime.now().millisecondsSinceEpoch}.jpg';
 
     await supabase.storage
         .from('rent_images')
@@ -80,7 +122,6 @@ class _FamilyPageState extends State<FamilyPage> {
         .getPublicUrl('family/$fileName');
   }
 
-  // ================= ADD POST =================
   Future<void> addPostDialog() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
@@ -90,16 +131,14 @@ class _FamilyPageState extends State<FamilyPage> {
     final area = TextEditingController();
     final price = TextEditingController();
     final phone = TextEditingController();
-
-    DateTime? availableFrom;
+    DateTime? availableDate;
     String? imageUrl;
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: featureCard,
-        title: const Text("Add Family Rent",
-            style: TextStyle(color: tealDark)),
+        title: const Text("Add Family Rent"),
         content: SingleChildScrollView(
           child: Column(
             children: [
@@ -109,23 +148,20 @@ class _FamilyPageState extends State<FamilyPage> {
               _inputField(price, "Price"),
               _inputField(phone, "Phone"),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: teal),
                 onPressed: () async =>
                 imageUrl = await uploadImage(),
                 child: const Text("Pick Image"),
               ),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: tealDark),
                 onPressed: () async {
-                  final date = await showDatePicker(
+                  availableDate = await showDatePicker(
                     context: context,
+                    initialDate: DateTime.now(),
                     firstDate: DateTime.now(),
                     lastDate: DateTime(2100),
-                    initialDate: DateTime.now(),
                   );
-                  availableFrom = date;
                 },
-                child: const Text("Select Available Date"),
+                child: const Text("Select Date"),
               ),
             ],
           ),
@@ -135,7 +171,6 @@ class _FamilyPageState extends State<FamilyPage> {
               onPressed: () => Navigator.pop(context, false),
               child: const Text("Cancel")),
           ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: teal),
               onPressed: () => Navigator.pop(context, true),
               child: const Text("Save")),
         ],
@@ -150,120 +185,40 @@ class _FamilyPageState extends State<FamilyPage> {
         'area': area.text,
         'price': price.text,
         'phone': phone.text,
-        'available_from': availableFrom?.toIso8601String(),
+        'available_from':
+        availableDate?.toIso8601String(),
         'image_url': imageUrl,
         'category': 'family',
+        'is_booked': false,
       });
 
-      loadPosts();
+      await loadPosts();
     }
   }
 
-  // ================= DELETE POST =================
-  Future<void> confirmDelete(int postId) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: featureCard,
-        title: const Text("Delete Post",
-            style: TextStyle(color: tealDark)),
-        content: const Text("Are you sure you want to delete this post?"),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("Cancel")),
-          ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: teal),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text("Delete")),
-        ],
-      ),
-    );
-
-    if (ok == true) {
-      await supabase.from('rent_posts').delete().eq('id', postId);
-      loadPosts();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Post deleted")),
-      );
-    }
-  }
-
-  // ================= WISHLIST TOGGLE =================
-  Future<void> toggleWishlist(int postId) async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    final existing = await supabase
-        .from('wishlist')
-        .select()
-        .eq('user_id', user.id)
-        .eq('post_id', postId);
-
-    if (existing.isNotEmpty) {
-      // remove from wishlist
-      await supabase
-          .from('wishlist')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('post_id', postId);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Removed from wishlist")),
-      );
-    } else {
-      // add to wishlist
-      await supabase.from('wishlist').insert({
-        'user_id': user.id,
-        'post_id': postId,
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Added to wishlist")),
-      );
-    }
-
-    setState(() {});
-  }
-
-  // ================= UI HELPERS =================
-  Widget _inputField(TextEditingController controller, String label) {
+  Widget _inputField(
+      TextEditingController controller, String label) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: TextField(
         controller: controller,
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: tealDark),
           filled: true,
           fillColor: innerBg,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: verdeBorder),
+            borderSide:
+            const BorderSide(color: verdeBorder),
           ),
         ),
       ),
     );
   }
 
-  void _onBottomTap(int index) {
-    setState(() => bottomIndex = index);
-
-    if (index == 0) {
-      Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const ExplorePage()));
-    } else if (index == 1) {
-      Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ProfilePage()));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final currentUser = supabase.auth.currentUser;
+    final user = supabase.auth.currentUser;
 
     return Scaffold(
       backgroundColor: bgAqua,
@@ -274,10 +229,11 @@ class _FamilyPageState extends State<FamilyPage> {
         title: const Text(
           "Family Rentals",
           style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontStyle: FontStyle.italic,
-              fontSize: 22,
-              color: tealDark),
+            color: tealDark,
+            fontWeight: FontWeight.bold,
+            fontStyle: FontStyle.italic,
+            fontSize: 22,
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton(
@@ -285,9 +241,7 @@ class _FamilyPageState extends State<FamilyPage> {
         onPressed: addPostDialog,
         child: const Icon(Icons.add),
       ),
-      body: posts.isEmpty
-          ? const Center(child: Text("No posts yet"))
-          : GridView.builder(
+      body: GridView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: posts.length,
         gridDelegate:
@@ -298,86 +252,111 @@ class _FamilyPageState extends State<FamilyPage> {
         ),
         itemBuilder: (_, i) {
           final p = posts[i];
-          final isOwner = currentUser?.id == p['user_id'];
-          final isAdmin = userRole == "admin";
+          final isWishlisted =
+          wishlistIds.contains(p['id']);
+          final isOwner = user?.id == p['user_id'];
+          bool isBooked = p['is_booked'] == true;
 
-          return Card(
-            color: featureCard,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            child: Column(
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
               children: [
-                Expanded(
-                  child: p['image_url'] != null
-                      ? ClipRRect(
-                    borderRadius:
-                    const BorderRadius.vertical(
-                        top: Radius.circular(12)),
-                    child: Image.network(
-                      p['image_url'],
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                    ),
-                  )
-                      : const Icon(Icons.image,
-                      size: 80, color: tealMuted),
+                Image.network(
+                  p['image_url'] ?? '',
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(6),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.8),
+                        Colors.transparent
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 10,
+                  left: 10,
+                  right: 10,
                   child: Column(
                     crossAxisAlignment:
                     CrossAxisAlignment.start,
                     children: [
-                      Text(p['title'],
+                      Text(p['title'] ?? '',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: tealDark)),
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                      Text("📍 ${p['location']}",
+                          style: const TextStyle(
+                              color: Colors.white)),
+                      Text("📐 ${p['area']}",
+                          style: const TextStyle(
+                              color: Colors.white)),
                       Text("৳ ${p['price']}",
                           style: const TextStyle(
-                              color: tealDark)),
+                              color: Colors.white)),
                       Text("📞 ${p['phone']}",
                           style: const TextStyle(
-                              color: tealDark)),
-                      Row(
-                        mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                                Icons.favorite_border,
-                                color: Colors.pink),
-                            onPressed: () =>
-                                toggleWishlist(p['id']),
-                          ),
-                          if (isOwner || isAdmin)
-                            IconButton(
-                              icon: const Icon(
-                                  Icons.delete,
-                                  color: Colors.red),
-                              onPressed: () =>
-                                  confirmDelete(p['id']),
-                            ),
-                        ],
-                      )
+                              color: Colors.white)),
                     ],
                   ),
-                )
+                ),
+                Positioned(
+                  top: 5,
+                  right: 5,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isOwner)
+                        IconButton(
+                          icon: const Icon(Icons.delete,
+                              color: Colors.red, size: 20),
+                          onPressed: () => deletePost(p),
+                        ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.check_box,
+                          color: isBooked
+                              ? Colors.red
+                              : Colors.green,
+                          size: 20,
+                        ),
+                        onPressed: isOwner
+                            ? () async {
+                          await supabase
+                              .from('rent_posts')
+                              .update({'is_booked': !isBooked})
+                              .eq('id', p['id']);
+                          setState(() {
+                            posts[i]['is_booked'] =
+                            !isBooked;
+                          });
+                        }
+                            : null,
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          isWishlisted
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color: Colors.pink,
+                          size: 20,
+                        ),
+                        onPressed: () =>
+                            toggleWishlist(p['id']),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           );
         },
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: bottomIndex,
-        onTap: _onBottomTap,
-        selectedItemColor: teal,
-        unselectedItemColor: tealMuted,
-        items: const [
-          BottomNavigationBarItem(
-              icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.person), label: "Profile"),
-        ],
       ),
     );
   }

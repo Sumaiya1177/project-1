@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_project1/Database/details.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'wishlist.dart';
+import 'explore_page.dart';
+import 'profile.dart';
 
 class FamilyPage extends StatefulWidget {
   const FamilyPage({super.key, required void Function() onBack});
@@ -13,11 +15,9 @@ class FamilyPage extends StatefulWidget {
 
 class _FamilyPageState extends State<FamilyPage> {
   final supabase = Supabase.instance.client;
-
   List<Map<String, dynamic>> posts = [];
-  List<int> wishlistIds = [];
 
-  // 🎨 Theme Colors
+  // COLORS
   static const bgAqua = Color(0xFFE8F8F7);
   static const teal = Color(0xFF2FB9B3);
   static const tealDark = Color(0xFF2E6F6B);
@@ -25,134 +25,148 @@ class _FamilyPageState extends State<FamilyPage> {
   static const verdeBorder = Color(0xFF9FE7D3);
   static const innerBg = Color(0xFFF3FAFF);
 
+  int selectedIndex = 0;
+
   @override
   void initState() {
     super.initState();
     loadPosts();
-    loadWishlist();
   }
 
+  /// LOAD RENT POSTS
   Future<void> loadPosts() async {
-    final data = await supabase
-        .from('rent_posts')
-        .select()
-        .eq('category', 'family')
-        .order('created_at', ascending: false);
+    try {
+      final data = await supabase
+          .from('rent_posts')
+          .select('*, profiles(id, full_name, phone, image_url)')
+          .eq('category', 'family') // you can change category dynamically if needed
+          .order('created_at', ascending: false);
 
-    posts = List<Map<String, dynamic>>.from(data);
-    setState(() {});
-  }
-
-  Future<void> loadWishlist() async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    final data = await supabase
-        .from('wishlist')
-        .select('post_id')
-        .eq('user_id', user.id);
-
-    wishlistIds =
-    List<int>.from(data.map((e) => e['post_id'] as int));
-
-    setState(() {});
-  }
-
-  Future<void> deletePost(Map<String, dynamic> post) async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    if (post['user_id'] != user.id) return;
-
-    await supabase
-        .from('rent_posts')
-        .delete()
-        .eq('id', post['id']);
-
-    if (post['image_url'] != null) {
-      final path = post['image_url']
-          .toString()
-          .split('/rent_images/')[1];
-      await supabase.storage
-          .from('rent_images')
-          .remove([path]);
+      posts = List<Map<String, dynamic>>.from(data);
+      setState(() {});
+    } catch (e) {
+      debugPrint("Load Error: $e");
     }
-
-    await loadPosts();
   }
 
-  Future<void> toggleWishlist(int postId) async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    if (wishlistIds.contains(postId)) {
-      await supabase
-          .from('wishlist')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('post_id', postId);
-      wishlistIds.remove(postId);
-    } else {
-      await supabase.from('wishlist').insert({
-        'user_id': user.id,
-        'post_id': postId,
-      });
-      wishlistIds.add(postId);
-    }
-
-    setState(() {});
-  }
-
-  Future<String?> uploadImage() async {
+  /// PICK & UPLOAD IMAGES
+  Future<List<String>> uploadImages() async {
     final picker = ImagePicker();
-    final image =
-    await picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return null;
+    final images = await picker.pickMultiImage();
+    if (images.isEmpty) return [];
 
-    final file = File(image.path);
-    final fileName =
-        '${DateTime.now().millisecondsSinceEpoch}.jpg';
-
-    await supabase.storage
-        .from('rent_images')
-        .upload('family/$fileName', file);
-
-    return supabase.storage
-        .from('rent_images')
-        .getPublicUrl('family/$fileName');
+    List<String> urls = [];
+    for (var image in images) {
+      final file = File(image.path);
+      final fileName =
+          'family/${DateTime.now().millisecondsSinceEpoch}_${image.name}';
+      await supabase.storage.from('rent_images').upload(fileName, file);
+      final url = supabase.storage.from('rent_images').getPublicUrl(fileName);
+      urls.add(url);
+    }
+    return urls;
   }
 
+  /// ADD POST DIALOG
   Future<void> addPostDialog() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final title = TextEditingController();
+    final profileData = await supabase
+        .from('profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (profileData == null) {
+      await supabase.from('profiles').insert({
+        'id': user.id,
+        'full_name': 'Default Name',
+        'phone': '0123456789',
+      });
+    }
+
     final location = TextEditingController();
-    final area = TextEditingController();
     final price = TextEditingController();
-    final phone = TextEditingController();
+    final area = TextEditingController();
+    final title = TextEditingController();
     DateTime? availableDate;
-    String? imageUrl;
+    List<String> imageUrls = [];
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: featureCard,
-        title: const Text("Add Family Rent"),
+        title: const Text(
+          "Add Family Rent",
+          style: TextStyle(
+              fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+        ),
         content: SingleChildScrollView(
           child: Column(
             children: [
-              _inputField(title, "Title"),
-              _inputField(location, "Location"),
-              _inputField(area, "Area"),
-              _inputField(price, "Price"),
-              _inputField(phone, "Phone"),
+              TextField(
+                controller: title,
+                decoration: InputDecoration(
+                  labelText: "Title",
+                  fillColor: innerBg,
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderSide: const BorderSide(color: verdeBorder),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: location,
+                decoration: InputDecoration(
+                  labelText: "Location / Address",
+                  fillColor: innerBg,
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderSide: const BorderSide(color: verdeBorder),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: area,
+                decoration: InputDecoration(
+                  labelText: "Area",
+                  fillColor: innerBg,
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderSide: const BorderSide(color: verdeBorder),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: price,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: "Price",
+                  fillColor: innerBg,
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderSide: const BorderSide(color: verdeBorder),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
               ElevatedButton(
-                onPressed: () async =>
-                imageUrl = await uploadImage(),
-                child: const Text("Pick Image"),
+                style: ElevatedButton.styleFrom(backgroundColor: teal),
+                onPressed: () async {
+                  imageUrls = await uploadImages();
+                },
+                child: const Text("Select Images"),
               ),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: teal),
                 onPressed: () async {
                   availableDate = await showDatePicker(
                     context: context,
@@ -161,7 +175,7 @@ class _FamilyPageState extends State<FamilyPage> {
                     lastDate: DateTime(2100),
                   );
                 },
-                child: const Text("Select Date"),
+                child: const Text("Select Available Date"),
               ),
             ],
           ),
@@ -184,10 +198,8 @@ class _FamilyPageState extends State<FamilyPage> {
         'location': location.text,
         'area': area.text,
         'price': price.text,
-        'phone': phone.text,
-        'available_from':
-        availableDate?.toIso8601String(),
-        'image_url': imageUrl,
+        'images': imageUrls,
+        'available_from': availableDate?.toIso8601String(),
         'category': 'family',
         'is_booked': false,
       });
@@ -196,167 +208,122 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
-  Widget _inputField(
-      TextEditingController controller, String label) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: innerBg,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide:
-            const BorderSide(color: verdeBorder),
-          ),
-        ),
-      ),
-    );
+  /// BOTTOM NAV
+  void onTabTapped(int index) {
+    if (index == 0) {
+      Navigator.pushReplacement(
+          context, MaterialPageRoute(builder: (_) => const ExplorePage()));
+    } else if (index == 1) {
+      Navigator.pushReplacement(
+          context, MaterialPageRoute(builder: (_) => const ProfilePage()));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = supabase.auth.currentUser;
-
     return Scaffold(
       backgroundColor: bgAqua,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
         title: const Text(
           "Family Rentals",
-          style: TextStyle(
-            color: tealDark,
-            fontWeight: FontWeight.bold,
-            fontStyle: FontStyle.italic,
-            fontSize: 22,
-          ),
+          style:
+          TextStyle(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: teal,
-        onPressed: addPostDialog,
-        child: const Icon(Icons.add),
+        backgroundColor: Colors.white,
+        foregroundColor: tealDark,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: tealDark),
+          onPressed: () {
+            Navigator.pushReplacement(
+                context, MaterialPageRoute(builder: (_) => const ExplorePage()));
+          },
+        ),
+        centerTitle: true,
+        elevation: 0,
       ),
       body: GridView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: posts.length,
-        gridDelegate:
-        const SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
         itemBuilder: (_, i) {
           final p = posts[i];
-          final isWishlisted =
-          wishlistIds.contains(p['id']);
-          final isOwner = user?.id == p['user_id'];
-          bool isBooked = p['is_booked'] == true;
-
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Stack(
-              children: [
-                Image.network(
-                  p['image_url'] ?? '',
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.8),
-                        Colors.transparent
+          final images = p['images'] as List?;
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => RentDetailsPage(post: p))); // generic
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (images != null && images.isNotEmpty)
+                    Image.network(images.first, fit: BoxFit.cover)
+                  else
+                    Container(color: Colors.grey),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    alignment: Alignment.bottomLeft,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("🏠 ${p['category'] ?? ''}",
+                            style: const TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.bold)),
+                        Text("📍 ${p['location'] ?? ''}",
+                            style: const TextStyle(color: Colors.white)),
                       ],
                     ),
                   ),
-                ),
-                Positioned(
-                  bottom: 10,
-                  left: 10,
-                  right: 10,
-                  child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                    children: [
-                      Text(p['title'] ?? '',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold)),
-                      Text("📍 ${p['location']}",
-                          style: const TextStyle(
-                              color: Colors.white)),
-                      Text("📐 ${p['area']}",
-                          style: const TextStyle(
-                              color: Colors.white)),
-                      Text("৳ ${p['price']}",
-                          style: const TextStyle(
-                              color: Colors.white)),
-                      Text("📞 ${p['phone']}",
-                          style: const TextStyle(
-                              color: Colors.white)),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  top: 5,
-                  right: 5,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isOwner)
-                        IconButton(
-                          icon: const Icon(Icons.delete,
-                              color: Colors.red, size: 20),
-                          onPressed: () => deletePost(p),
-                        ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.check_box,
-                          color: isBooked
-                              ? Colors.red
-                              : Colors.green,
-                          size: 20,
-                        ),
-                        onPressed: isOwner
-                            ? () async {
-                          await supabase
-                              .from('rent_posts')
-                              .update({'is_booked': !isBooked})
-                              .eq('id', p['id']);
-                          setState(() {
-                            posts[i]['is_booked'] =
-                            !isBooked;
-                          });
-                        }
-                            : null,
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          isWishlisted
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                          color: Colors.pink,
-                          size: 20,
-                        ),
-                        onPressed: () =>
-                            toggleWishlist(p['id']),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: teal,
+        onPressed: addPostDialog,
+        child: const Icon(Icons.add),
+      ),
+      bottomNavigationBar: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 6,
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              IconButton(
+                iconSize: 28,
+                icon: const Icon(Icons.home),
+                onPressed: () => onTabTapped(0),
+              ),
+              const SizedBox(width: 50), // space for FAB
+              IconButton(
+                iconSize: 28,
+                icon: const Icon(Icons.person),
+                onPressed: () => onTabTapped(1),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

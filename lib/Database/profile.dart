@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_project1/Database/setting.dart';
+import 'package:flutter_project1/Database/support.dart';
 import 'package:flutter_project1/Database/explore_page.dart';
-import 'package:flutter_project1/pages/welcome_page.dart' show WelcomePage;
+import 'package:flutter_project1/pages/welcome_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'setting.dart';
-import 'support.dart'; // <-- Import the separate support page
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
@@ -18,6 +18,9 @@ class _ProfilePageState extends State<ProfilePage> {
   String userName = "";
   String userEmail = "";
   String? avatarUrl;
+  String nidNumber = "";
+  String address = "";
+  String phone = "";
   bool isLoading = true;
 
   @override
@@ -27,25 +30,29 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> loadUserData() async {
+    setState(() => isLoading = true);
     final user = supabase.auth.currentUser;
-    if (user != null) {
-      try {
-        final data = await supabase
-            .from('profiles')
-            .select()
-            .eq('user_id', user.id)
-            .maybeSingle();
+    if (user == null) return;
 
-        setState(() {
-          userName = data?['name'] ?? "";
-          avatarUrl = data?['image_url'];
-          userEmail = user.email ?? "";
-          isLoading = false;
-        });
-      } catch (e) {
-        print("Error loading user data: $e");
-        setState(() => isLoading = false);
-      }
+    try {
+      final data = await supabase
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      setState(() {
+        userName = data?['full_name'] ?? "No Name";
+        avatarUrl = data?['image_url'];
+        userEmail = user.email ?? "";
+        nidNumber = data?['nid_number'] ?? "";
+        address = data?['address'] ?? "";
+        phone = data?['phone'] ?? "";
+        isLoading = false;
+      });
+    } catch (e) {
+      print("Error loading user data: $e");
+      setState(() => isLoading = false);
     }
   }
 
@@ -65,25 +72,12 @@ class _ProfilePageState extends State<ProfilePage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         title: const Text(
           "Confirm Logout",
-          style: TextStyle(
-            color: Color(0xFF2E6F6B),
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: Color(0xFF2E6F6B), fontWeight: FontWeight.bold),
         ),
-        content: const Text(
-          "Are you sure you want to logout?",
-          style: TextStyle(color: Color(0xFF4F6F6C)),
-        ),
+        content: const Text("Are you sure you want to logout?", style: TextStyle(color: Color(0xFF4F6F6C))),
         actions: [
-          TextButton(
-            child: const Text("Cancel", style: TextStyle(color: Color(0xFF2FB9B3))),
-            onPressed: () => Navigator.pop(context),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Color(0xFFEF4E4E)),
-            child: const Text("Logout"),
-            onPressed: logout,
-          ),
+          TextButton(child: const Text("Cancel", style: TextStyle(color: Color(0xFF2FB9B3))), onPressed: () => Navigator.pop(context)),
+          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4E4E)), child: const Text("Logout"), onPressed: logout),
         ],
       ),
     );
@@ -96,29 +90,16 @@ class _ProfilePageState extends State<ProfilePage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF2FB9B3)),
-          onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const ExplorePage()),
-            );
-          },
-        ),
-        title: const Text(
-          "Profile",
-          style: TextStyle(
-            color: Color(0xFF2E6F6B),
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
+        leading: IconButton(icon: const Icon(Icons.arrow_back, color: Color(0xFF2FB9B3)), onPressed: () {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const ExplorePage()));
+        }),
+        title: const Text("Profile", style: TextStyle(color: Color(0xFF2E6F6B), fontWeight: FontWeight.bold, fontSize: 20)),
         centerTitle: true,
       ),
       body: SafeArea(
         child: isLoading
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF2FB9B3)))
-            : Column(
+            : ListView(
           children: [
             Container(
               width: double.infinity,
@@ -133,55 +114,48 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: avatarUrl == null ? const Icon(Icons.person, size: 50, color: Colors.white) : null,
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    userName.isEmpty ? "No Name" : userName,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2E6F6B),
-                    ),
-                  ),
+                  Text(userName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2E6F6B))),
                   const SizedBox(height: 5),
-                  Text(
-                    userEmail,
-                    style: const TextStyle(color: Color(0xFF4F6F6C)),
-                  ),
+                  Text(userEmail, style: const TextStyle(color: Color(0xFF4F6F6C))),
+                  const SizedBox(height: 8),
+                  if (nidNumber.isNotEmpty) Text("NID: $nidNumber", style: const TextStyle(color: Color(0xFF4F6F6C))),
+                  if (address.isNotEmpty) Text("Address: $address", style: const TextStyle(color: Color(0xFF4F6F6C))),
+                  if (phone.isNotEmpty) Text("Phone: $phone", style: const TextStyle(color: Color(0xFF4F6F6C))),
                 ],
               ),
             ),
             const SizedBox(height: 10),
-            Expanded(
-              child: ListView(
-                children: [
-                  buildMenuItem(
-                    icon: Icons.settings,
-                    title: "Edit Account",
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SettingsPage()),
-                      );
-                      loadUserData();
-                    },
-                  ),
-                  buildMenuItem(
-                    icon: Icons.support_agent,
-                    title: "Contact Support",
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SupportPage()),
-                      );
-                    },
-                  ),
-                  buildMenuItem(
-                    icon: Icons.logout,
-                    title: "Logout",
-                    color: const Color(0xFFEF4E4E),
-                    onTap: showLogoutDialog,
-                  ),
-                ],
-              ),
+            buildMenuItem(
+              icon: Icons.settings,
+              title: "Edit Account",
+              onTap: () async {
+                // Wait for updated avatarUrl from SettingsPage
+                final updatedAvatarUrl = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+                );
+
+                if (updatedAvatarUrl != null && updatedAvatarUrl is String) {
+                  setState(() {
+                    avatarUrl = updatedAvatarUrl;
+                  });
+                } else {
+                  loadUserData(); // fallback
+                }
+              },
+            ),
+            buildMenuItem(
+              icon: Icons.support_agent,
+              title: "Contact Support",
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportPage()));
+              },
+            ),
+            buildMenuItem(
+              icon: Icons.logout,
+              title: "Logout",
+              color: const Color(0xFFEF4E4E),
+              onTap: showLogoutDialog,
             ),
           ],
         ),
@@ -189,12 +163,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget buildMenuItem({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    Color color = const Color(0xFF2FB9B3),
-  }) {
+  Widget buildMenuItem({required IconData icon, required String title, required VoidCallback onTap, Color color = const Color(0xFF2FB9B3)}) {
     return Column(
       children: [
         ListTile(

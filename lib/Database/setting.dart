@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'profile.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -14,7 +13,6 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final SupabaseClient supabase = Supabase.instance.client;
 
-  // Controllers for form fields
   final nameController = TextEditingController();
   final genderController = TextEditingController();
   final ageController = TextEditingController();
@@ -22,21 +20,19 @@ class _SettingsPageState extends State<SettingsPage> {
   final addressController = TextEditingController();
   final phoneController = TextEditingController();
 
-  File? _image; // local picked image
+  File? _image;
   String email = "";
-  String? avatarUrl; // Supabase storage image URL
+  String? avatarUrl;
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    loadProfile(); // Load user data from Supabase
+    loadProfile();
   }
 
-  /// Load Profile Data from Supabase Table
   Future<void> loadProfile() async {
     setState(() => isLoading = true);
-
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
@@ -46,11 +42,11 @@ class _SettingsPageState extends State<SettingsPage> {
       final data = await supabase
           .from('profiles')
           .select()
-          .eq('user_id', user.id)
+          .eq('id', user.id)
           .maybeSingle();
 
       if (data != null) {
-        nameController.text = data['name'] ?? "";
+        nameController.text = data['full_name'] ?? "";
         genderController.text = data['gender'] ?? "";
         ageController.text = data['age']?.toString() ?? "";
         nidController.text = data['nid_number'] ?? "";
@@ -67,19 +63,15 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// Pick Image from Gallery
   Future<void> pickImage() async {
     final picker = ImagePicker();
-    final pickedFile =
-    await picker.pickImage(source: ImageSource.gallery);
-
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
       _image = File(pickedFile.path);
       await uploadImage();
     }
   }
 
-  /// Upload Image to Supabase Storage Bucket 'profile'
   Future<void> uploadImage() async {
     final user = supabase.auth.currentUser;
     if (user == null || _image == null) return;
@@ -89,15 +81,10 @@ class _SettingsPageState extends State<SettingsPage> {
       final bytes = await _image!.readAsBytes();
 
       await supabase.storage
-          .from('profile') // bucket name
-          .uploadBinary(
-        fileName,
-        bytes,
-        fileOptions: const FileOptions(upsert: true),
-      );
+          .from('profile')
+          .uploadBinary(fileName, bytes, fileOptions: const FileOptions(upsert: true));
 
-      final imageUrl =
-      supabase.storage.from('profile').getPublicUrl(fileName);
+      final imageUrl = supabase.storage.from('profile').getPublicUrl(fileName);
 
       setState(() {
         avatarUrl = imageUrl;
@@ -113,14 +100,14 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// Save Profile Data to Supabase Table 'profiles'
   Future<void> saveProfile() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
     final upsertData = {
-      'user_id': user.id,
-      'name': nameController.text.trim(),
+      'id': user.id,
+      'email': user.email, // make sure email is stored
+      'full_name': nameController.text.trim(),
       'gender': genderController.text.trim(),
       'age': int.tryParse(ageController.text.trim()) ?? 0,
       'nid_number': nidController.text.trim(),
@@ -136,10 +123,8 @@ class _SettingsPageState extends State<SettingsPage> {
         const SnackBar(content: Text("Profile Updated Successfully")),
       );
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const ProfilePage()),
-      );
+      // Return avatarUrl to ProfilePage
+      Navigator.pop(context, avatarUrl);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error saving profile: $e")),
@@ -147,9 +132,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// ===============================
-  /// UI Build
-  /// ===============================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -159,27 +141,16 @@ class _SettingsPageState extends State<SettingsPage> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF2FB9B3)),
-          onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const ProfilePage()),
-            );
-          },
+          onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           "My Account",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2E6F6B),
-            fontSize: 20,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E6F6B), fontSize: 20),
         ),
         centerTitle: true,
       ),
       body: isLoading
-          ? const Center(
-        child: CircularProgressIndicator(color: Color(0xFF6FD6CF)),
-      )
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2FB9B3)))
           : ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -198,15 +169,14 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildEmailField(),
           const SizedBox(height: 16),
 
-          /// Image Upload Section
           GestureDetector(
             onTap: pickImage,
             child: Container(
               height: 140,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: const Color(0xFFF3FAFF),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFBFEFED)),
+                border: Border.all(color: const Color(0xFF9FE7D3)),
               ),
               child: avatarUrl != null
                   ? ClipRRect(
@@ -221,8 +191,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.image,
-                        size: 40, color: Color(0xFF6FD6CF)),
+                    Icon(Icons.image, size: 40, color: Color(0xFF2FB9B3)),
                     SizedBox(height: 8),
                     Text("Upload Profile Picture"),
                   ],
@@ -234,17 +203,9 @@ class _SettingsPageState extends State<SettingsPage> {
           SizedBox(
             height: 50,
             child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6FD6CF),
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2FB9B3)),
               onPressed: saveProfile,
-              child: const Text(
-                "Save Changes",
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2E6F6B),
-                ),
-              ),
+              child: const Text("Save Changes", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
             ),
           ),
         ],
@@ -252,21 +213,15 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// ===============================
-  /// Text Field Widget
-  /// ===============================
-  Widget _buildField(String label, TextEditingController controller,
-      {bool isNumber = false}) {
+  Widget _buildField(String label, TextEditingController controller, {bool isNumber = false}) {
     return TextField(
       controller: controller,
       keyboardType: isNumber ? TextInputType.number : TextInputType.text,
       decoration: InputDecoration(
         labelText: label,
         filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        fillColor: const Color(0xFFF3FAFF),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF9FE7D3))),
       ),
     );
   }
@@ -278,10 +233,8 @@ class _SettingsPageState extends State<SettingsPage> {
       decoration: InputDecoration(
         labelText: "Email",
         filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        fillColor: const Color(0xFFF3FAFF),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF9FE7D3))),
       ),
     );
   }

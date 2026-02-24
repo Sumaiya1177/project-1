@@ -1,6 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_project1/auth/auth_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_project1/pages/login_page.dart';
 
 class SignupPage extends StatefulWidget {
@@ -14,18 +14,17 @@ class _SignupPageState extends State<SignupPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  final authService = AuthService();
+  final supabase = Supabase.instance.client;
 
   bool _loading = false;
   bool _obscurePass = true;
   bool _obscureConfirm = true;
 
-  // 🎨 Pastel Aqua + Pastel Teal palette
+  // Colors
   static const bgAqua = Color(0xFFE8F8F7);
   static const teal = Color(0xFF2FB9B3);
   static const tealDark = Color(0xFF2E6F6B);
@@ -36,14 +35,12 @@ class _SignupPageState extends State<SignupPage> {
   @override
   void dispose() {
     _nameController.dispose();
-    _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  // ✅ Pastel teal "glass" input decoration
   InputDecoration _glassField({
     required String label,
     required IconData icon,
@@ -83,16 +80,8 @@ class _SignupPageState extends State<SignupPage> {
   String? _validateName(String? v) {
     final value = (v ?? '').trim();
     if (value.isEmpty) return "Name required";
-    if (RegExp(r'\d').hasMatch(value)) return "Name cannot contain numbers";
     if (!RegExp(r"^[A-Za-z.\- ]+$").hasMatch(value)) return "Only letters and spaces allowed";
     if (value.length < 2) return "Enter a valid name";
-    return null;
-  }
-
-  String? _validatePhone(String? v) {
-    final value = (v ?? "").trim();
-    if (value.isEmpty) return "Phone number required";
-    if (value.length < 8) return "Enter valid phone number";
     return null;
   }
 
@@ -100,7 +89,6 @@ class _SignupPageState extends State<SignupPage> {
     final value = (v ?? "").trim();
     if (value.isEmpty) return "Email required";
     if (!value.contains("@")) return "Enter valid email";
-
     return null;
   }
 
@@ -109,7 +97,6 @@ class _SignupPageState extends State<SignupPage> {
     if (value.isEmpty) return "Password required";
     if (value.length < 6) return "Min 6 characters";
     if (!RegExp(r'[A-Z]').hasMatch(value)) return "Password must contain 1 capital letter";
-
     return null;
   }
 
@@ -124,28 +111,35 @@ class _SignupPageState extends State<SignupPage> {
     if (!_formKey.currentState!.validate()) return;
 
     final name = _nameController.text.trim();
-    final phone = _phoneController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
     setState(() => _loading = true);
 
     try {
-      await authService.signUpWithEmailPassword(email, password);
+      // 1️⃣ Sign up in Supabase Auth
+      final authResponse = await supabase.auth.signUp(
+        email: email,
+        password: password,
+      );
 
-      // Optional profile save
-      try {
-        await authService.createOrUpdateProfile(
-          fullName: name,
-          phone: phone,
-          email: email,
-        );
-      } catch (_) {}
+      if (authResponse.user == null) throw Exception('Signup failed');
+
+
+      // 2️⃣ Insert into profiles table with approved=false, is_admin=false
+      await supabase.from('profiles').insert({
+        'id': authResponse.user!.id,
+        'full_name': name,
+        'email':email,
+        'is_verified': false,
+        'is_admin': false,
+        'created_at': DateTime.now().toIso8601String(),
+      });
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Signup Successful. Please login now.")),
+        const SnackBar(content: Text("✅ Signup successful! Wait for admin approval.")),
       );
 
       Navigator.pushReplacement(
@@ -170,12 +164,8 @@ class _SignupPageState extends State<SignupPage> {
     return Scaffold(
       body: Stack(
         children: [
-          // 🌊 Pastel Aqua Background
-          Positioned.fill(
-            child: Container(color: bgAqua),
-          ),
-
-          // ✅ Top bar: Back + Center Title
+          Positioned.fill(child: Container(color: bgAqua)),
+          // Top bar
           Positioned(
             top: topPad + 6,
             left: 0,
@@ -194,22 +184,15 @@ class _SignupPageState extends State<SignupPage> {
                   ),
                   const Text(
                     "StayEase",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontStyle: FontStyle.italic,
-                      fontWeight: FontWeight.w800,
-                      color: tealDark,
-                      letterSpacing: 0.4,
-                    ),
+                    style: TextStyle(fontSize: 22, fontStyle: FontStyle.italic, fontWeight: FontWeight.w800, color: tealDark),
                   ),
                 ],
               ),
             ),
           ),
-
-          // ✅ Logo (Image asset)
+          // Logo
           Positioned(
-            top: topPad + height * 0.10,
+            top: topPad + height * 0.12,
             left: 0,
             right: 0,
             child: Center(
@@ -221,23 +204,13 @@ class _SignupPageState extends State<SignupPage> {
                   color: Colors.white.withOpacity(0.78),
                   borderRadius: BorderRadius.circular(26),
                   border: Border.all(color: borderAqua, width: 1.2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, 10))],
                 ),
-                child: Image.asset(
-                  "image/logo.png",
-                  fit: BoxFit.contain,
-                ),
+                child: Image.asset("image/logo.png", fit: BoxFit.contain),
               ),
             ),
           ),
-
-          // ✅ Bottom Glass Sheet
+          // Bottom Glass Sheet
           Align(
             alignment: Alignment.bottomCenter,
             child: ClipRRect(
@@ -251,13 +224,6 @@ class _SignupPageState extends State<SignupPage> {
                     color: Colors.white.withOpacity(0.58),
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
                     border: Border.all(color: borderAqua, width: 1.2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.10),
-                        blurRadius: 30,
-                        offset: const Offset(0, -10),
-                      ),
-                    ],
                   ),
                   child: SingleChildScrollView(
                     child: Form(
@@ -265,140 +231,56 @@ class _SignupPageState extends State<SignupPage> {
                       child: Column(
                         children: [
                           const SizedBox(height: 8),
-
-                          const Text(
-                            "Create Your Account",
-                            style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              color: tealDark,
-                            ),
-                          ),
+                          const Text("Create Your Account", style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tealDark)),
                           const SizedBox(height: 6),
-                          const Text(
-                            "Sign up to start your StayEase journey",
-                            style: TextStyle(fontSize: 14, color: tealMuted),
-                            textAlign: TextAlign.center,
-                          ),
+                          const Text("Sign up to start your StayEase journey", style: TextStyle(fontSize: 14, color: tealMuted), textAlign: TextAlign.center),
                           const SizedBox(height: 20),
-
-                          TextFormField(
-                            controller: _nameController,
-                            validator: _validateName,
-                            style: const TextStyle(color: Color(0xFF163B38)),
-                            decoration: _glassField(label: "Full Name", icon: Icons.person_outline),
-                          ),
+                          TextFormField(controller: _nameController, validator: _validateName, decoration: _glassField(label: "Full Name", icon: Icons.person_outline)),
                           const SizedBox(height: 14),
-
-                          TextFormField(
-                            controller: _phoneController,
-                            keyboardType: TextInputType.phone,
-                            validator: _validatePhone,
-                            style: const TextStyle(color: Color(0xFF163B38)),
-                            decoration: _glassField(label: "Phone Number", icon: Icons.phone_outlined),
-                          ),
+                          TextFormField(controller: _emailController, validator: _validateEmail, decoration: _glassField(label: "Email", icon: Icons.email_outlined)),
                           const SizedBox(height: 14),
-
-                          TextFormField(
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            validator: _validateEmail,
-                            style: const TextStyle(color: Color(0xFF163B38)),
-                            decoration: _glassField(label: "Email", icon: Icons.email_outlined),
-                          ),
-                          const SizedBox(height: 14),
-
                           TextFormField(
                             controller: _passwordController,
                             obscureText: _obscurePass,
                             validator: _validatePassword,
-                            style: const TextStyle(color: Color(0xFF163B38)),
                             decoration: _glassField(
                               label: "Password",
                               icon: Icons.lock_outline,
-                              suffixIcon: IconButton(
-                                onPressed: () => setState(() => _obscurePass = !_obscurePass),
-                                icon: Icon(
-                                  _obscurePass ? Icons.visibility_off : Icons.visibility,
-                                  color: teal,
-                                ),
-                              ),
+                              suffixIcon: IconButton(onPressed: () => setState(() => _obscurePass = !_obscurePass), icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, color: teal)),
                             ),
                           ),
                           const SizedBox(height: 14),
-
                           TextFormField(
                             controller: _confirmPasswordController,
                             obscureText: _obscureConfirm,
                             validator: _validateConfirmPassword,
-                            style: const TextStyle(color: Color(0xFF163B38)),
                             decoration: _glassField(
                               label: "Confirm Password",
                               icon: Icons.lock_outline,
-                              suffixIcon: IconButton(
-                                onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
-                                icon: Icon(
-                                  _obscureConfirm ? Icons.visibility_off : Icons.visibility,
-                                  color: teal,
-                                ),
-                              ),
+                              suffixIcon: IconButton(onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm), icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility, color: teal)),
                             ),
                           ),
-
                           const SizedBox(height: 18),
-
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
                               onPressed: _loading ? null : _signUp,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: btnTeal,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                elevation: 0,
-                              ),
-                              child: _loading
-                                  ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                                  : const Text(
-                                "Sign Up",
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                              ),
+                              style: ElevatedButton.styleFrom(backgroundColor: btnTeal, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), elevation: 0),
+                              child: _loading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : const Text("Sign Up", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                             ),
                           ),
-
                           const SizedBox(height: 14),
-
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Text("Already have an account?",
-                                  style: TextStyle(color: tealMuted)),
+                              const Text("Already have an account?", style: TextStyle(color: tealMuted)),
                               TextButton(
-                                onPressed: () {
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(builder: (_) => const LoginPage()),
-                                  );
-                                },
+                                onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginPage())),
                                 style: TextButton.styleFrom(foregroundColor: teal),
-                                child: const Text(
-                                  "Sign In",
-                                  style: TextStyle(fontWeight: FontWeight.w800),
-                                ),
+                                child: const Text("Sign In", style: TextStyle(fontWeight: FontWeight.w800)),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 6),
                         ],
                       ),
                     ),

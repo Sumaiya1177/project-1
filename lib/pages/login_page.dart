@@ -1,8 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_project1/auth/auth_service.dart';
-import 'package:flutter_project1/Database/explore_page.dart';
-import 'package:flutter_project1/pages/signup_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'signup_page.dart';
+import 'admin_page.dart';
+import 'package:flutter_project1/database/explore_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -14,7 +15,7 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final authService = AuthService();
+  final supabase = Supabase.instance.client;
 
   bool _loading = false;
   bool _obscure = true;
@@ -26,27 +27,60 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  // ✅ Login + is_verified + admin redirect
   Future<void> login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
+    if (email.isEmpty || password.isEmpty) return;
 
     setState(() => _loading = true);
 
     try {
-      await authService.signInWithEmailPassword(email, password);
+      final response = await supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
 
-      if (!mounted) return;
+      if (response.user == null) {
+        throw Exception('Invalid email or password');
+      }
+
+      // Get profile
+      final profile = await supabase
+          .from('profiles')
+          .select()
+          .eq('id', response.user!.id)
+          .single();
+
+      if (profile == null) {
+        throw Exception('Profile not found');
+      }
+
+      if (!(profile['is_verified'] ?? false)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('❌ Your account is not verified by admin yet.')),
+        );
+        await supabase.auth.signOut();
+        return;
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Login Successful")),
+        const SnackBar(content: Text('✅ Login Successful')),
       );
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const ExplorePage()),
-      );
+      // Navigate based on admin
+      if (profile['is_admin'] == true) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const AdminPanelPage()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ExplorePage()),
+        );
+      }
     } catch (e) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Error: $e")),
       );
@@ -55,7 +89,6 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // ✅ Pastel Teal "glass" field
   InputDecoration _glassField({
     required String label,
     required IconData icon,
@@ -63,7 +96,7 @@ class _LoginPageState extends State<LoginPage> {
   }) {
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: Color(0xFF2E6F6B)), // teal text
+      labelStyle: const TextStyle(color: Color(0xFF2E6F6B)),
       prefixIcon: Icon(icon, color: const Color(0xFF2FB9B3)),
       suffixIcon: suffixIcon,
       filled: true,
@@ -91,12 +124,7 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       body: Stack(
         children: [
-          // 🌊 Pastel Aqua Background
-          Positioned.fill(
-            child: Container(color: const Color(0xFFE8F8F7)),
-          ),
-
-          // ✅ Top bar: back + centered title (pastel teal)
+          Positioned.fill(child: Container(color: const Color(0xFFE8F8F7))),
           Positioned(
             top: topPad + 6,
             left: 0,
@@ -110,10 +138,7 @@ class _LoginPageState extends State<LoginPage> {
                     alignment: Alignment.centerLeft,
                     child: IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new,
-                        color: Color(0xFF2FB9B3), // pastel teal
-                      ),
+                      icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF2FB9B3)),
                     ),
                   ),
                   const Text(
@@ -130,8 +155,6 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
           ),
-
-          // ✅ Logo (image asset) near top-center
           Positioned(
             top: topPad + height * 0.12,
             left: 0,
@@ -144,27 +167,15 @@ class _LoginPageState extends State<LoginPage> {
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.75),
                   borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: const Color(0xFFBFEFED),
-                    width: 1.2,
-                  ),
+                  border: Border.all(color: const Color(0xFFBFEFED), width: 1.2),
                   boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
+                    BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, 10)),
                   ],
                 ),
-                child: Image.asset(
-                  "image/logo.png",
-                  fit: BoxFit.contain,
-                ),
+                child: Image.asset("image/logo.png", fit: BoxFit.contain),
               ),
             ),
           ),
-
-          // ✅ Bottom "soft glass" sheet (pastel teal theme)
           Align(
             alignment: Alignment.bottomCenter,
             child: ClipRRect(
@@ -176,18 +187,10 @@ class _LoginPageState extends State<LoginPage> {
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.55),
-                    borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(28)),
-                    border: Border.all(
-                      color: const Color(0xFFBFEFED),
-                      width: 1.2,
-                    ),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                    border: Border.all(color: const Color(0xFFBFEFED), width: 1.2),
                     boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.10),
-                        blurRadius: 30,
-                        offset: const Offset(0, -10),
-                      ),
+                      BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 30, offset: const Offset(0, -10)),
                     ],
                   ),
                   child: Column(
@@ -196,36 +199,22 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 10),
                       const Text(
                         "Welcome Back!",
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF2E6F6B),
-                        ),
+                        style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Color(0xFF2E6F6B)),
                       ),
                       const SizedBox(height: 6),
                       const Text(
                         "Sign in to continue your StayEase journey",
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF4F6F6C),
-                        ),
+                        style: TextStyle(fontSize: 14, color: Color(0xFF4F6F6C)),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 24),
-
-                      // Email
                       TextField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
                         style: const TextStyle(color: Color(0xFF163B38)),
-                        decoration: _glassField(
-                          label: "Email",
-                          icon: Icons.email_outlined,
-                        ),
+                        decoration: _glassField(label: "Email", icon: Icons.email_outlined),
                       ),
                       const SizedBox(height: 16),
-
-                      // Password
                       TextField(
                         controller: _passwordController,
                         obscureText: _obscure,
@@ -235,17 +224,11 @@ class _LoginPageState extends State<LoginPage> {
                           icon: Icons.lock_outline,
                           suffixIcon: IconButton(
                             onPressed: () => setState(() => _obscure = !_obscure),
-                            icon: Icon(
-                              _obscure ? Icons.visibility_off : Icons.visibility,
-                              color: const Color(0xFF2FB9B3),
-                            ),
+                            icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: const Color(0xFF2FB9B3)),
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 22),
-
-                      // Sign in button (pastel teal)
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -254,57 +237,27 @@ class _LoginPageState extends State<LoginPage> {
                             backgroundColor: const Color(0xFF6FD6CF),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             elevation: 0,
                           ),
                           child: _loading
                               ? const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
                           )
-                              : const Text(
-                            "Sign In",
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                              : const Text("Sign In", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                         ),
                       ),
-
                       const SizedBox(height: 12),
-
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(
-                            "Don't have an account?",
-                            style: TextStyle(color: Color(0xFF4F6F6C)),
-                          ),
+                          const Text("Don't have an account?", style: TextStyle(color: Color(0xFF4F6F6C))),
                           TextButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const SignupPage(),
-                                ),
-                              );
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF2FB9B3),
-                            ),
-                            child: const Text(
-                              "Sign Up",
-                              style: TextStyle(fontWeight: FontWeight.w800),
-                            ),
+                            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignupPage())),
+                            style: TextButton.styleFrom(foregroundColor: const Color(0xFF2FB9B3)),
+                            child: const Text("Sign Up", style: TextStyle(fontWeight: FontWeight.w800)),
                           ),
                         ],
                       ),

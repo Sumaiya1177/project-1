@@ -30,7 +30,7 @@ class AuthService {
   Future<void> createOrUpdateProfile({
     required String fullName,
     required String phone,
-    required String email,
+    required String email, required bool isVerified, required bool isAdmin,
   }) async {
     final user = _supabase.auth.currentUser;
 

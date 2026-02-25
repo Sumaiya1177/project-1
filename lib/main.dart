@@ -4,8 +4,6 @@ import 'package:flutter_project1/pages/welcome_page.dart';
 import 'package:flutter_project1/pages/signup_page.dart';
 import 'package:flutter_project1/pages/login_page.dart';
 import 'package:flutter_project1/pages/admin_page.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -12,13 +12,11 @@ class _WishlistPageState extends State<WishlistPage> {
   final supabase = Supabase.instance.client;
   List<Map<String, dynamic>> wishlist = [];
 
-  // 🎨 Theme Colors
+  // Theme colors
   static const bgAqua = Color(0xFFE8F8F7);
-  static const teal = Color(0xFF2FB9B3);
   static const tealDark = Color(0xFF2E6F6B);
   static const featureCard = Color(0xFFDFECFF);
   static const verdeBorder = Color(0xFF9FE7D3);
-  static const innerBg = Color(0xFFF3FAFF);
 
   @override
   void initState() {
@@ -26,20 +24,24 @@ class _WishlistPageState extends State<WishlistPage> {
     loadWishlist();
   }
 
+  /// Load wishlist items from Supabase
   Future<void> loadWishlist() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final data = await supabase
+    final response = await supabase
         .from('wishlist')
-        .select('id, post_id, rent_posts(*)')
+        .select('id, post_id, title, price, area, location, phone, available_from, image_url, category')
         .eq('user_id', user.id)
         .order('created_at', ascending: false);
 
-    wishlist = List<Map<String, dynamic>>.from(data);
-    setState(() {});
+    if (response != null && response is List) {
+      wishlist = List<Map<String, dynamic>>.from(response);
+      setState(() {});
+    }
   }
 
+  /// Remove an item from wishlist
   Future<void> removeFromWishlist(int id) async {
     await supabase.from('wishlist').delete().eq('id', id);
     await loadWishlist();
@@ -49,7 +51,6 @@ class _WishlistPageState extends State<WishlistPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: bgAqua,
-
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -64,7 +65,6 @@ class _WishlistPageState extends State<WishlistPage> {
           ),
         ),
       ),
-
       body: wishlist.isEmpty
           ? const Center(
         child: Text(
@@ -78,8 +78,7 @@ class _WishlistPageState extends State<WishlistPage> {
           : GridView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: wishlist.length,
-        gridDelegate:
-        const SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
@@ -87,7 +86,6 @@ class _WishlistPageState extends State<WishlistPage> {
         ),
         itemBuilder: (_, i) {
           final w = wishlist[i];
-          final post = w['rent_posts'];
 
           return Card(
             color: featureCard,
@@ -98,28 +96,24 @@ class _WishlistPageState extends State<WishlistPage> {
             child: Column(
               children: [
                 Expanded(
-                  child: post['image_url'] != null
+                  child: w['image_url'] != null && w['image_url'].toString().isNotEmpty
                       ? ClipRRect(
-                    borderRadius:
-                    const BorderRadius.vertical(
-                        top: Radius.circular(12)),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                     child: Image.network(
-                      post['image_url'],
+                      w['image_url'],
                       fit: BoxFit.cover,
                       width: double.infinity,
                     ),
                   )
                       : const Icon(Icons.image, size: 50),
                 ),
-
                 Padding(
                   padding: const EdgeInsets.all(8),
                   child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        post['title'] ?? '',
+                        w['title'] ?? '',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -130,7 +124,7 @@ class _WishlistPageState extends State<WishlistPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        "📍 ${post['location'] ?? ''}",
+                        "📍 ${w['location'] ?? ''}",
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.black87,
@@ -139,14 +133,14 @@ class _WishlistPageState extends State<WishlistPage> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        "📐 ${post['area'] ?? ''}",
+                        "📐 ${w['area'] ?? ''}",
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.black87,
                         ),
                       ),
                       Text(
-                        "৳ ${post['price'] ?? ''}",
+                        "৳ ${w['price'] ?? ''}",
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
@@ -154,7 +148,7 @@ class _WishlistPageState extends State<WishlistPage> {
                         ),
                       ),
                       Text(
-                        "📞 ${post['phone'] ?? ''}",
+                        "📞 ${w['phone'] ?? ''}",
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.black87,
@@ -163,7 +157,6 @@ class _WishlistPageState extends State<WishlistPage> {
                     ],
                   ),
                 ),
-
                 Align(
                   alignment: Alignment.centerRight,
                   child: IconButton(
@@ -171,8 +164,7 @@ class _WishlistPageState extends State<WishlistPage> {
                       Icons.delete,
                       color: Colors.red,
                     ),
-                    onPressed: () =>
-                        removeFromWishlist(w['id']),
+                    onPressed: () => removeFromWishlist(w['id']),
                   ),
                 ),
               ],

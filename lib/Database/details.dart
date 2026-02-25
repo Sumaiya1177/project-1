@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'wishlist.dart';
 
 class RentDetailsPage extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -19,13 +21,16 @@ class _RentDetailsPageState extends State<RentDetailsPage> {
   String currentUserId = '';
   DateTime? availableDate;
 
-  // Color Palette
+  // Owner Data
+  String ownerName = 'Loading...';
+  String ownerPhone = '';
+  String ownerEmail = '';
+
+  // Colors
   static const bgAqua = Color(0xFFE8F8F7);
   static const teal = Color(0xFF2FB9B3);
   static const tealDark = Color(0xFF2E6F6B);
-  static const featureCard = Color(0xDFECFF);
-  static const verdeBorder = Color(0xFF9FE7D3);
-  static const innerBg = Color(0xFFF3FAFF);
+  static const featureCard = Color(0xFFDFECFF);
 
   @override
   void initState() {
@@ -35,54 +40,119 @@ class _RentDetailsPageState extends State<RentDetailsPage> {
     isBooked = widget.post['is_booked'] ?? false;
 
     if (widget.post['available_from'] != null) {
-      availableDate = DateTime.parse(widget.post['available_from']);
+      availableDate = DateTime.tryParse(widget.post['available_from']);
     }
 
+    _fetchOwnerProfile();
     _checkWishlist();
   }
 
-  // Check if user already wishlisted
+  /// Fetch Owner Info
+  Future<void> _fetchOwnerProfile() async {
+    try {
+      final ownerId = widget.post['user_id'];
+      if (ownerId == null) return;
+
+      final data = await supabase
+          .from('profiles')
+          .select('full_name, phone, email')
+          .eq('id', ownerId)
+          .maybeSingle();
+
+      setState(() {
+        ownerName = data?['full_name'] ?? 'No Name';
+        ownerPhone = data?['phone'] ?? '';
+        ownerEmail = data?['email'] ?? '';
+      });
+    } catch (e) {
+      debugPrint("Owner fetch error: $e");
+      setState(() {
+        ownerName = 'Owner not found';
+      });
+    }
+  }
+
+  /// Check if post already wishlisted
   Future<void> _checkWishlist() async {
+    if (currentUserId.isEmpty) return;
     final postId = widget.post['id'];
-    final res = await supabase
-        .from('wishlists')
+    if (postId == null) return;
+
+    final response = await supabase
+        .from('wishlist')
         .select()
         .eq('user_id', currentUserId)
         .eq('post_id', postId)
         .maybeSingle();
 
     setState(() {
-      isWishlisted = res != null;
+      isWishlisted = response != null;
     });
   }
 
-  // Toggle wishlist
+  /// Toggle Wishlist
   Future<void> toggleWishlist() async {
-    final postId = widget.post['id'];
-    if (isWishlisted) {
-      await supabase
-          .from('wishlists')
-          .delete()
-          .eq('user_id', currentUserId)
-          .eq('post_id', postId);
-    } else {
-      await supabase.from('wishlists').insert({
-        'user_id': currentUserId,
-        'post_id': postId,
-      });
+    if (currentUserId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please login first")),
+      );
+      return;
     }
 
-    setState(() {
-      isWishlisted = !isWishlisted;
-    });
+    final postId = widget.post['id'];
+    if (postId == null) return;
+
+    try {
+      if (!isWishlisted) {
+        await supabase.from('wishlist').insert({
+          'user_id': currentUserId,
+          'post_id': postId,
+          'title': widget.post['title'] ?? '',
+          'price': widget.post['price']?.toString() ?? '',
+          'area': widget.post['area']?.toString() ?? '',
+          'location': widget.post['location'] ?? '',
+          'phone': widget.post['phone'] ?? '',
+          'available_from': widget.post['available_from'],
+          'image_url': (widget.post['images'] != null &&
+              widget.post['images'] is List &&
+              (widget.post['images'] as List).isNotEmpty)
+              ? widget.post['images'][0]
+              : null,
+          'category': widget.post['category'] ?? '',
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      } else {
+        await supabase
+            .from('wishlist')
+            .delete()
+            .eq('user_id', currentUserId)
+            .eq('post_id', postId);
+      }
+
+      setState(() {
+        isWishlisted = !isWishlisted;
+      });
+    } catch (e) {
+      debugPrint("Wishlist toggle error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to update wishlist")),
+      );
+    }
   }
 
-  // Toggle booked/unbooked (only owner)
+  /// Call Owner
+  Future<void> _callOwner() async {
+    if (ownerPhone.isEmpty) return;
+    final Uri uri = Uri.parse("tel:$ownerPhone");
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
+  /// Toggle Availability (Owner Only)
   Future<void> toggleAvailable() async {
     final ownerId = widget.post['user_id'];
     if (currentUserId != ownerId) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Only owner can change availability.")),
+        const SnackBar(content: Text("Only owner can change availability")),
       );
       return;
     }
@@ -90,83 +160,30 @@ class _RentDetailsPageState extends State<RentDetailsPage> {
     final postId = widget.post['id'];
     final newStatus = !isBooked;
 
-    try {
-      await supabase
-          .from('rent_posts')
-          .update({'is_booked': newStatus})
-          .eq('id', postId);
+    await supabase
+        .from('rent_posts')
+        .update({'is_booked': newStatus})
+        .eq('id', postId);
 
-      setState(() {
-        isBooked = newStatus;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                "Post is now ${isBooked ? 'Booked 🔒' : 'Available ✅'}")),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to update post: $e")),
-      );
-    }
-  }
-
-  // Edit available date (only owner)
-  Future<void> editAvailableDate() async {
-    final ownerId = widget.post['user_id'];
-    if (currentUserId != ownerId) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Only owner can edit date.")),
-      );
-      return;
-    }
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: availableDate ?? DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-    );
-
-    if (picked != null) {
-      final postId = widget.post['id'];
-      try {
-        await supabase
-            .from('rent_posts')
-            .update({'available_from': picked.toIso8601String()})
-            .eq('id', postId);
-
-        setState(() {
-          availableDate = picked;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  "Available from date updated to ${DateFormat('dd MMM yyyy').format(picked)}")),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to update date: $e")),
-        );
-      }
-    }
+    setState(() {
+      isBooked = newStatus;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final post = widget.post;
     final images = post['images'] as List?;
-    final profile = post['profiles'];
-    final ownerName = profile != null ? profile['name'] ?? '' : '';
-    final ownerPhone = profile != null ? profile['phone'] ?? '' : '';
-    String formattedDate =
-    availableDate != null ? DateFormat('dd MMM yyyy').format(availableDate!) : '';
+    String formattedDate = availableDate != null
+        ? DateFormat('dd MMM yyyy').format(availableDate!)
+        : '';
 
     return Scaffold(
       backgroundColor: bgAqua,
       appBar: AppBar(
+        backgroundColor: bgAqua,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: tealDark),
         title: Text(
           "${post['category'] ?? 'Rental'} Details",
           style: const TextStyle(
@@ -174,15 +191,12 @@ class _RentDetailsPageState extends State<RentDetailsPage> {
               fontStyle: FontStyle.italic,
               color: tealDark),
         ),
-        backgroundColor: bgAqua,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: tealDark),
       ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // IMAGE CAROUSEL
+            // Image Slider
             if (images != null && images.isNotEmpty)
               SizedBox(
                 height: 250,
@@ -198,8 +212,7 @@ class _RentDetailsPageState extends State<RentDetailsPage> {
                 color: Colors.grey[300],
                 child: const Center(child: Text("No Image")),
               ),
-
-            // DETAILS CARD
+            // Details Card
             Padding(
               padding: const EdgeInsets.all(16),
               child: Container(
@@ -217,51 +230,67 @@ class _RentDetailsPageState extends State<RentDetailsPage> {
                     const SizedBox(height: 12),
                     Text("📐 Area: ${post['area'] ?? ''}"),
                     const SizedBox(height: 8),
-                    Text("💰 Price: ৳ ${post['price'] ?? ''}",
-                        style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Text("📅 Available From: $formattedDate",
-                            style: const TextStyle(fontSize: 16)),
-                        const SizedBox(width: 12),
-                        if (currentUserId == post['user_id'])
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: teal),
-                            onPressed: editAvailableDate,
-                          ),
-                      ],
+                    Text(
+                      "💰 Price: ৳ ${post['price'] ?? ''}",
+                      style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold),
                     ),
+                    const SizedBox(height: 12),
+                    Text("📅 Available From: $formattedDate"),
                     const Divider(height: 30),
-                    const Text("Owner Information",
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Text(
+                      "Owner Information",
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 8),
                     Text("👤 Name: $ownerName"),
                     const SizedBox(height: 6),
-                    Text("📞 Phone: $ownerPhone"),
+                    GestureDetector(
+                      onTap: _callOwner,
+                      child: Text(
+                        "📞 Phone: $ownerPhone",
+                        style: const TextStyle(
+                            color: Colors.blue,
+                            decoration: TextDecoration.underline),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text("📧 Email: $ownerEmail"),
                     const SizedBox(height: 16),
-
-                    // BUTTONS
+                    // Buttons Row
                     Row(
                       children: [
-                        ElevatedButton(
+                        ElevatedButton.icon(
                           onPressed: toggleWishlist,
+                          icon: Icon(
+                            isWishlisted
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: Colors.white,
+                          ),
+                          label: Text(
+                            isWishlisted
+                                ? "Added to Wishlist"
+                                : "Add to Wishlist",
+                            style: const TextStyle(color: Colors.white),
+                          ),
                           style: ElevatedButton.styleFrom(
-                              backgroundColor: tealDark),
-                          child: Text(isWishlisted
-                              ? "💖 Wishlisted"
-                              : "🤍 Add to Wishlist"),
+                            backgroundColor: tealDark,
+                          ),
                         ),
                         const SizedBox(width: 16),
                         ElevatedButton(
                           onPressed: toggleAvailable,
                           style: ElevatedButton.styleFrom(
-                              backgroundColor: isBooked ? Colors.red : teal),
-                          child: Text(isBooked ? "🔒 Booked" : "✅ Available"),
+                            backgroundColor:
+                            isBooked ? Colors.red : teal,
+                          ),
+                          child: Text(
+                            isBooked ? "🔒 Booked" : "✅ Available",
+                          ),
                         ),
                       ],
                     ),
